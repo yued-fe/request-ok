@@ -21,7 +21,7 @@ function launchChrome(headless = true) {
 	const launcher = new Launcher({
 		port: 9222,
 		autoSelectChrome: true, // False to manually select which Chrome install.
-		additionalFlags: [
+		chromeFlags: [ // 这里的参数也是看源码改的!WORIGUGEDEWENDANG!!!
 			'--window-size=412,732',
 			'--disable-gpu', // 为了避免现版本的bug
 			headless ? '--headless' : ''
@@ -34,8 +34,7 @@ function launchChrome(headless = true) {
 			return launcher
 		})
 		.catch(err => {
-			return launcher
-				.kill()
+			return launcher.kill()
 				.then((err) => { // Kill Chrome if there's an error.
 					throw err;
 				});
@@ -86,6 +85,7 @@ launchChrome(true).then(launcher => {
 			Network.requestWillBeSent(params => {
 				// green(params.request.headers.key)
 				// 请求发出前的加工
+				// green(params.request.headers['MyKey']) // 可以看出setExtraHTTPHeaders是有用的
 			})
 		}).catch(err => {
 			console.log(err)
@@ -95,7 +95,6 @@ launchChrome(true).then(launcher => {
 		Network.responseReceived(params => {
 			// todo 通过打印可以看出 该事件也是异步的 那么这些个对index的打印也都是异步的 也就是说 因为index全局所以闭包了…
 			console.log(chalk.blue('Network.responseReceived' + ' ' + index))
-
 			let row = {}
 			let frameId = params.frameId
 			let {status, url} = params.response
