@@ -12,6 +12,11 @@ const {red, green, warn, ok} = require('./util/colorify')
 // 读取需要扫描的urls
 const {urls} = require('./config/urls')
 
+// 读取需要配置的header
+const {headers} = require('./config/headers')
+
+const chalk = require('chalk')
+
 function launchChrome(headless = true) {
 	const launcher = new Launcher({
 		port: 9222,
@@ -48,19 +53,6 @@ function onPageLoad(Runtime) {
 	})
 }
 
-function onRequestWillBeSent(Network) {
-	// 设置header的地方
-	return Network.setExtraHTTPHeaders({
-		'headers': {
-			'key': 'val'
-		}
-	}).then(result => {
-		return result
-	}).catch(err => {
-		console.log(err)
-	})
-}
-
 
 launchChrome(true).then(launcher => {
 	// 下面这一段也是要根据npm上新的文档改阿西吧fuck
@@ -68,39 +60,63 @@ launchChrome(true).then(launcher => {
 	// chrome(function)这种会在内部调用事件触发 once只执行一次传入的回调函数
 	chrome(protocol => {
 		let index = 0
+		let curPage // 用来把同一个url下的所有请求归到一起
+		let curId // 标识Page 只不过是用id的形式
+
 		const length = urls.length
 
 		const {Page, Runtime, Network} = protocol
-		// 加载事件
+		// 页面加载事件
 		Page.loadEventFired(() => {
+			console.log(chalk.blue('Page.loadEventFired'))
+
 			onPageLoad(Runtime).then((result) => {
 				green(result)
 
-				protocol.close();
-				launcher.kill(); // Kill Chrome.
-			});
-		});
+				protocol.close()
+				launcher.kill() // Kill Chrome.
+			})
+		})
 
-		// 在这里设置header 好像headers发生变化了……是不是应该把willbesent写在里面? 确实是……
-		// onRequestWillBeSent(Network).then(result => {
-		// 	Network.requestWillBeSent(params => {
-		// 		green(params.request.headers.key)
-		// 	})
-		// })
+		// 在这里设置header
+		Network.setExtraHTTPHeaders({
+			'headers': headers // config/headers.js配置
+		}).then(result => {
+			// 请求发出前的事件
+			Network.requestWillBeSent(params => {
+				// green(params.request.headers.key)
+				// 请求发出前的加工
+			})
+		}).catch(err => {
+			console.log(err)
+		})
 
 		// 收到响应的事件
 		Network.responseReceived(params => {
+			// todo 通过打印可以看出 该事件也是异步的 那么这些个对index的打印也都是异步的 也就是说 因为index全局所以闭包了…
+			console.log(chalk.blue('Network.responseReceived' + ' ' + index))
+
 			let row = {}
-			let status = params.response.status
-			let url = params.response.url
-			if (status !== 200) {
-				warn(status, urls[index-1])
+			let frameId = params.frameId
+			let {status, url} = params.response
+			if (!(/^http/.test(url))) return
+			console.log('-'.repeat(20))
+			// console.log(frameId)
+			// console.log(url)
+			if (status === 404) {
+				warn(status, urls[index])
 			}
 		})
 
-		// 这边一定要先enable才能用
-		Page.frameNavigated(frame => {
-			if (index < length) return Page.navigate({url: urls[index++]})
+		// navigate结束的事件
+		Page.frameNavigated(params => {
+			console.log(chalk.blue('Page.frameNavigated' + ' ' + index))
+
+			let {url, id} = params.frame
+			// 会有不是http请求的东西 过滤掉
+			if (!(/^http/.test(url))) return
+			index++
+			if (index < length) return Page.navigate({url: urls[index]})
 		})
 
 		Promise.all([
@@ -108,7 +124,11 @@ launchChrome(true).then(launcher => {
 			Page.enable(),
 			Runtime.enable()
 		]).then(() => {
-			if (index < length) return Page.navigate({url: urls[index++]})
+			console.log(chalk.blue('Promise.all'))
+			if (index < length) {
+				curPage = urls[index] // 应该是第一次urls[0]
+				return Page.navigate({url: urls[index]})
+			}
 		}).catch((err) => {
 			console.error(err)
 			protocol.close()

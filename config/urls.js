@@ -1,6 +1,6 @@
-let begin = 1006459400
+let begin = 1006459590
 let urls = []
-for (let i = 0; i < 200; i++) {
+for (let i = 0; i < 10; i++) {
 	urls.push(begin++)
 }
 urls = urls.map(num => {
