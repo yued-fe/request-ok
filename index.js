@@ -9,33 +9,36 @@ const {Launcher} = require('lighthouse/chrome-launcher/chrome-launcher');
 // 稍微封了一下打印的东西
 const {red, green, warn} = require('./util/colorify')
 
+// 读取需要扫描的urls
+const {urls} = require('./config/urls')
+
 function launchChrome(headless = true) {
-  const launcher = new Launcher({
-    port: 9222,
-    autoSelectChrome: true, // False to manually select which Chrome install.
-    additionalFlags: [
-      '--window-size=412,732',
-      '--disable-gpu', // 为了避免现版本的bug
-      headless ? '--headless' : ''
-    ]
-  });
-  // 这个地方launcher.run已经取消 改为launch
-  return launcher.launch()
-  	.then(() => {
-  		// 要是没启动可能是端口占用了lsof -i tcp:9222看看 如果是就kill那个pid
-  		return launcher
-  	})
-    .catch(err => {
-      return launcher
-	      .kill()
-	      .then((err) => { // Kill Chrome if there's an error.
-	        throw err;
-	      });
-    });
+	const launcher = new Launcher({
+		port: 9222,
+		autoSelectChrome: true, // False to manually select which Chrome install.
+		additionalFlags: [
+			'--window-size=412,732',
+			'--disable-gpu', // 为了避免现版本的bug
+			headless ? '--headless' : ''
+		]
+	});
+	// 这个地方launcher.run已经取消 改为launch
+	return launcher.launch()
+		.then(() => {
+			// 要是没启动可能是端口占用了lsof -i tcp:9222看看 如果是就kill那个pid
+			return launcher
+		})
+		.catch(err => {
+			return launcher
+				.kill()
+				.then((err) => { // Kill Chrome if there's an error.
+					throw err;
+				});
+		});
 }
 
 function onPageLoad(Runtime) {
-  // 其实如果要检验404 写爬虫啥的估计就是在这个位置了吧 不知道
+	// 其实如果要检验404 写爬虫啥的估计就是在这个位置了吧 不知道
 	const js = "document.querySelector('title').textContent"
 
 	return Runtime.evaluate({expression: js}).then(result => {
@@ -46,15 +49,16 @@ function onPageLoad(Runtime) {
 }
 
 function onRequestWillBeSent(Network) {
-  return Network.setExtraHTTPHeaders({
-    'headers': {
-      'key': 'val'
-    }
-  }).then(result => {
-    return result
-  }).catch(err => {
-    console.log(err)
-  })
+	// 设置header的地方
+	return Network.setExtraHTTPHeaders({
+		'headers': {
+			'key': 'val'
+		}
+	}).then(result => {
+		return result
+	}).catch(err => {
+		console.log(err)
+	})
 }
 
 
@@ -62,51 +66,46 @@ launchChrome(true).then(launcher => {
 	// 下面这一段也是要根据npm上新的文档改阿西吧fuck
 	// chrome.Version().then(version => console.log(version['User-Agent']));
 	// chrome(function)这种会在内部调用事件触发 once只执行一次传入的回调函数
-  chrome(protocol => {
-  	const {Page, Runtime, Network} = protocol
+	chrome(protocol => {
+		const {Page, Runtime, Network} = protocol
+		// 加载事件
+		Page.loadEventFired(() => {
+			onPageLoad(Runtime).then((result) => {
+				green(result)
 
-  	// 这边一定要先enable才能用
-  	Promise.all([
-  		Network.enable(),
-  		Page.enable(),
-  		Runtime.enable()
+				protocol.close();
+				launcher.kill(); // Kill Chrome.
+			});
+		});
+
+		// 在这里设置header 好像headers发生变化了……是不是应该把willbesent写在里面? 确实是……
+		// onRequestWillBeSent(Network).then(result => {
+		// 	Network.requestWillBeSent(params => {
+		// 		green(params.request.headers.key)
+		// 	})
+		// })
+
+		// 收到响应的事件
+		Network.responseReceived(params => {
+			let row = {}
+			let status = params.response.status
+			let url = params.response.url
+			if (status !== 200) {
+				warn(status, url)
+			}
+		})
+
+		// 这边一定要先enable才能用
+		Promise.all([
+			Network.enable(),
+			Page.enable(),
+			Runtime.enable()
 		]).then(() => {
-			Page.navigate({url: 'http://book.qidian.com/info/1003354632'})
-
-			Page.loadEventFired(() => {
-        onPageLoad(Runtime).then((result) => {
-        	green(result)
-
-          protocol.close();
-          launcher.kill(); // Kill Chrome.
-        });
-      });
-
-      // 在这里设置header todo 好像headers发生变化了……是不是应该把willbesent写在里面?
-      Network.requestWillBeSent(params => {
-				onRequestWillBeSent(Network).then((result) => {
-          console.log(params.request.headers)
-          red('fuck @onRequestWillBeSent')
-        }).catch(err => {
-          console.log(err)
-        })
-			})
-
-			// 在这里根据响应看有无非200
-			Network.responseReceived(params => {
-				let row = {}
-				let status = params.response.status
-				let url = params.response.url
-        if(status !== 200) {
-          warn(status, url)
-        }
-				  
-			})
-
+			return Page.navigate({url: urls[0]})
 		}).catch(err => {
 			red('fuck @launchChrome(true)')
 		})
-  })
+	})
 });
 
 
