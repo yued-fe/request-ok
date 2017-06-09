@@ -7,7 +7,7 @@ const lighthouse = require('lighthouse');
 const {Launcher} = require('lighthouse/chrome-launcher/chrome-launcher');
 
 // 稍微封了一下打印的东西
-const {red, green, warn} = require('./util/colorify')
+const {red, green, warn, ok} = require('./util/colorify')
 
 // 读取需要扫描的urls
 const {urls} = require('./config/urls')
@@ -67,6 +67,9 @@ launchChrome(true).then(launcher => {
 	// chrome.Version().then(version => console.log(version['User-Agent']));
 	// chrome(function)这种会在内部调用事件触发 once只执行一次传入的回调函数
 	chrome(protocol => {
+		let index = 0
+		const length = urls.length
+
 		const {Page, Runtime, Network} = protocol
 		// 加载事件
 		Page.loadEventFired(() => {
@@ -91,22 +94,30 @@ launchChrome(true).then(launcher => {
 			let status = params.response.status
 			let url = params.response.url
 			if (status !== 200) {
-				warn(status, url)
+				warn(status, urls[index-1])
 			}
 		})
 
 		// 这边一定要先enable才能用
+		Page.frameNavigated(frame => {
+			if (index < length) return Page.navigate({url: urls[index++]})
+		})
+
 		Promise.all([
 			Network.enable(),
 			Page.enable(),
 			Runtime.enable()
 		]).then(() => {
-			return Page.navigate({url: urls[0]})
-		}).catch(err => {
-			red('fuck @launchChrome(true)')
-		})
+			if (index < length) return Page.navigate({url: urls[index++]})
+		}).catch((err) => {
+			console.error(err)
+			protocol.close()
+		});
+
 	})
-});
+}).catch(err => {
+	red('fuck @launchChrome(true)')
+})
 
 
 
