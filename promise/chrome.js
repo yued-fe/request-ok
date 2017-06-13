@@ -10,7 +10,7 @@ const portscanner = require('portscanner')
 const {red, green, warn, ok} = require('../util/colorify')
 
 // 读取需要扫描的urls
-const {urls} = require('../config/urls')
+const {pages} = require('../config/pages')
 
 // 读取需要配置的header
 const {headers} = require('../config/headers')
@@ -76,25 +76,42 @@ const runPage = (launcher) => {
 	// chrome(function)这种会在内部调用事件触发 once只执行一次传入的回调函数
 	chrome(protocol => {
 		let index = 0
+		let end = pages.length - 1
+
 		let curPage = ''// 用来把同一个url下的所有请求归到一起
 		let visitDict = {} // 总感觉这会是个万恶之源
 		let reqIdMap = {} // 这个也是
 		// 测试用计数器
-		let count = {}
-
-		const length = urls.length
+		let httpCount = {
+			reqSent: 0,
+			resReceived: 0
+		}
 
 		const {Page, Runtime, Network} = protocol
 		// 页面加载事件 页面加载好了之后才会触发……
 		Page.loadEventFired(() => {
-			// console.log(chalk.magenta('Page.loadEventFired'))
+			console.log(chalk.magenta('Page.loadEventFired'))
 			onPageLoad(Runtime).then((result) => {
-				// green(result)
+				console.log(chalk.gray('onPageLoad in Page.loadEventFired'))
+
 				// 为了等待所有res的ugly代码
-				setTimeout(()=>{
-					protocol.close()
-					launcher.kill() // Kill Chrome.
-				},10000)
+				setTimeout(() => {
+					console.log(chalk.yellow(`reqSent:${httpCount.reqSent}  resReceived:${httpCount.resReceived}`))
+					let num = Object.keys(reqIdMap).length
+					console.log('多的请求： ' + chalk.yellow(num))
+					console.log('数量是否对的上: ' + (num + httpCount.resReceived === httpCount.reqSent))
+					console.log(reqIdMap)
+
+					if (index === end) {
+						protocol.close()
+						launcher.kill() // Kill Chrome.
+					} else {
+						index++
+						Page.navigate({url: pages[index]})
+					}
+
+
+				}, 3000)
 			})
 		})
 
@@ -104,11 +121,23 @@ const runPage = (launcher) => {
 		}).then(result => {
 			// 请求发出前的事件
 			Network.requestWillBeSent(params => {
-				// console.log(chalk.red('Network.requestWillBeSent: ' + params.requestId + '  ' + params.documentURL))
-				// 记录每个请求所属page
-				reqIdMap[params.requestId] = params.documentURL
+				if(!/^http/.test(params.request.url)) return // 为了找出数量对不上的问题 目前看到base64……
 
-				count[params.documentURL] ? (count[params.documentURL]++) : (count[params.documentURL] = 1)
+				httpCount.reqSent++
+				console.log(chalk.red('Network.requestWillBeSent: ' + params.requestId + '  ' + params.documentURL))
+				// 记录每个请求所属page
+				if (reqIdMap[params.requestId]) {
+					reqIdMap[params.requestId + '*'] = {
+						url: params.request.url,
+						page: params.documentURL
+					}
+				} else {
+					reqIdMap[params.requestId] = {
+						url: params.request.url,
+						page: params.documentURL
+					}
+				}
+
 				// green(params.request.headers.key)
 				// 请求发出前的加工
 				// green(params.request.headers['MyKey']) // 可以看出setExtraHTTPHeaders是有用的
@@ -119,36 +148,29 @@ const runPage = (launcher) => {
 
 		// 收到响应的事件
 		Network.responseReceived(params => {
-			// console.log(chalk.blue('Network.responseReceived: ' + params.requestId + '   ' + reqIdMap[params.requestId]))
-			// console.log(count)
+			httpCount.resReceived++
+			if(!reqIdMap[params.requestId]) {
+				console.log(chalk.red(params.response.url))
+				return
+			}
+			console.log(chalk.blue('Network.responseReceived: ' + params.requestId + '   ' + reqIdMap[params.requestId].page))
+			let page = reqIdMap[params.requestId].page
 
-			let page = reqIdMap[params.requestId]
-			count[page]--
-			if (count[page] === 0) delete count[page]
 			let requestId = params.requestId
 			let {status, url} = params.response
 			// console.log(url)
 			if (!(/^http/.test(url))) return
 
 			if (status !== 200) {
-				warn(status, reqIdMap[requestId], url)
+				warn(status, reqIdMap[requestId].page, url)
 			}
+			// todo
+			delete reqIdMap[requestId]
 		})
 
-		// navigate结束的事件 它发生在一个url所有的请求都发出去后……
+		// navigate结束的事件 发生在Page那个url收到响应后 尼玛鸡肋的一逼……
 		Page.frameNavigated(params => {
-			// console.log(chalk.green('Page.frameNavigated' + ' ' + index))
-
-			let {url, id} = params.frame
-			// 会有不是http请求的东西 过滤掉
-			if (!(/^http/.test(url))) return
-			index++
-			if (index < length) {
-				curPage = urls[index] // 更新curPage
-				visitDict[curPage] = [] // 更新dict
-
-				return Page.navigate({url: urls[index]})
-			}
+			console.log(chalk.green('Page.frameNavigated' + ' ' + index))
 		})
 
 		Promise.all([
@@ -156,11 +178,11 @@ const runPage = (launcher) => {
 			Page.enable(),
 			Runtime.enable()
 		]).then(() => {
-			if (index < length) {
-				curPage = urls[index] // 应该是第一次urls[0]
+			if (index < end + 1) {
+				curPage = pages[index] // 应该是第一次urls[0]
 				visitDict[curPage] = []
 
-				return Page.navigate({url: urls[index]})
+				Page.navigate({url: pages[index]})
 			}
 		}).catch((err) => {
 			console.error(err)
