@@ -1,7 +1,7 @@
-const chrome = require('chrome-remote-interface') // 按照这篇来尝试https://developers.google.com/web/updates/2017/04/headless-chrome 但是遇到了各种api坑 只好去翻了翻源码 修改了一部分地方
+const CDP = require('chrome-remote-interface') // 按照这篇来尝试https://developers.google.com/web/updates/2017/04/headless-chrome 但是遇到了各种api坑 只好去翻了翻源码 修改了一部分地方
 
 // const lighthouse = require('lighthouse')
-const {Launcher} = require('lighthouse/chrome-launcher/chrome-launcher') // @@@ lighthouse是为了跨平台启动chrome 注意 这里引用路径与chrome文档上不同 文档上需要更新了 参考这儿 https://github.com/googlechrome/lighthouse/blob/HEAD/docs/readme.md#using-programmatically
+const chromeLauncher = require('lighthouse/chrome-launcher/chrome-launcher') // @@@ lighthouse是为了跨平台启动chrome 注意 这里引用路径与chrome文档上不同 文档上需要更新了 参考这儿 https://github.com/googlechrome/lighthouse/blob/HEAD/docs/readme.md#using-programmatically
 
 // 检查端口占用
 const portscanner = require('portscanner')
@@ -14,6 +14,9 @@ const {pages} = require('../config/pages')
 
 // 读取需要配置的header
 const {headers} = require('../config/headers')
+
+// lauch配置
+const launchConfig = require('../config/launch')
 
 const chalk = require('chalk')
 
@@ -32,30 +35,20 @@ const checkPort = (port) => {
 
 // 根据源码里这里会产生一个chrome的实例(headless)
 const launchChrome = async (launchConfig) => {
-	// 检查是否指定了配置 如无 则采用文件中的默认配置
+	// 检查是否指定了配置
 	if (!launchConfig) {
 		console.log('launchChrome need params:launchConfig')
 		return
-		// launchConfig = require('../config/launch')
 	}
 	// 检查端口号
 	let portStatus = await checkPort(launchConfig.port)
 	if (portStatus !== 'closed') {
-		console.log(`port ${launchConfig.port} is opened, use another one`)
+		console.log(`port ${launchConfig.port} is opened, use another one. Of course, maybe the reason of an existing headless chrome`)
 		return
 	}
 	// 启动
-	const launcher = new Launcher(launchConfig)
-	// 这个地方launcher.run已经取消 改为launch
-	// 要是没启动可能是端口占用了lsof -i tcp:9222看看 如果是就kill那个pid
-	return launcher.launch()
-		.then(() => launcher)
-		.catch(err => {
-			return launcher.kill()
-				.then((err) => { // Kill Chrome if there's an error.
-					throw err;
-				});
-		});
+	const launcher = await chromeLauncher.launch(launchConfig)
+	return launcher
 }
 
 
@@ -70,128 +63,126 @@ const onPageLoad = (Runtime) => {
 	})
 }
 
-const runPage = (launcher) => {
-	// 下面这一段也是要根据npm上新的文档改阿西吧fuck
-	// chrome.Version().then(version => console.log(version['User-Agent']));
-	// chrome(function)这种会在内部调用事件触发 once只执行一次传入的回调函数
-	chrome(protocol => {
-		let index = 0
-		let end = pages.length - 1
-
-		let curPage = ''// 用来把同一个url下的所有请求归到一起
-		let visitDict = {} // 总感觉这会是个万恶之源
-		let reqIdMap = {} // 这个也是
-		// 测试用计数器
-		let httpCount = {
-			reqSent: 0,
-			resReceived: 0
-		}
-
-		const {Page, Runtime, Network} = protocol
-		// 页面加载事件 页面加载好了之后才会触发……
-		Page.loadEventFired(() => {
-			console.log(chalk.magenta('Page.loadEventFired'))
-			onPageLoad(Runtime).then((result) => {
-				console.log(chalk.gray('onPageLoad in Page.loadEventFired'))
-
-				// 为了等待所有res的ugly代码
-				setTimeout(() => {
-					console.log(chalk.yellow(`reqSent:${httpCount.reqSent}  resReceived:${httpCount.resReceived}`))
-					let num = Object.keys(reqIdMap).length
-					console.log('多的请求： ' + chalk.yellow(num))
-					console.log('数量是否对的上: ' + (num + httpCount.resReceived === httpCount.reqSent))
-					console.log(reqIdMap)
-
-					if (index === end) {
-						protocol.close()
-						launcher.kill() // Kill Chrome.
-					} else {
-						index++
-						Page.navigate({url: pages[index]})
-					}
+const start = async () => {
+	const chrome = await launchChrome(launchConfig)
+	const protocol = await CDP({port: chrome.port})
 
 
-				}, 3000)
-			})
-		})
+	let index = 0
+	let end = pages.length - 1
 
-		// 在这里设置header
-		Network.setExtraHTTPHeaders({
-			'headers': headers // config/headers.js配置
-		}).then(result => {
-			// 请求发出前的事件
-			Network.requestWillBeSent(params => {
-				if(!/^http/.test(params.request.url)) return // 为了找出数量对不上的问题 目前看到base64……
+	let curPage = ''// 用来把同一个url下的所有请求归到一起
+	let visitDict = {} // 总感觉这会是个万恶之源
+	let reqIdMap = {} // 这个也是
+	// 测试用计数器
+	let httpCount = {
+		reqSent: 0,
+		resReceived: 0
+	}
 
-				httpCount.reqSent++
-				console.log(chalk.red('Network.requestWillBeSent: ' + params.requestId + '  ' + params.documentURL))
-				// 记录每个请求所属page
-				if (reqIdMap[params.requestId]) {
-					reqIdMap[params.requestId + '*'] = {
-						url: params.request.url,
-						page: params.documentURL
-					}
+	const {Page, Runtime, Network} = protocol
+	// 页面加载事件 页面加载好了之后才会触发……
+	Page.loadEventFired(() => {
+		console.log(chalk.magenta('Page.loadEventFired'))
+		onPageLoad(Runtime).then((result) => {
+			console.log(chalk.gray('onPageLoad in Page.loadEventFired'))
+
+			// 为了等待所有res的ugly代码
+			setTimeout(() => {
+				console.log(chalk.yellow(`reqSent:${httpCount.reqSent}  resReceived:${httpCount.resReceived}`))
+				let num = Object.keys(reqIdMap).length
+				console.log('多的请求： ' + chalk.yellow(num))
+				console.log('数量是否对的上: ' + (num + httpCount.resReceived === httpCount.reqSent))
+				console.log(reqIdMap)
+
+				if (index === end) {
+					protocol.close()
+					chrome.kill() // Kill Chrome.
 				} else {
-					reqIdMap[params.requestId] = {
-						url: params.request.url,
-						page: params.documentURL
-					}
+					index++
+					Page.navigate({url: pages[index]})
 				}
 
-				// green(params.request.headers.key)
-				// 请求发出前的加工
-				// green(params.request.headers['MyKey']) // 可以看出setExtraHTTPHeaders是有用的
-			})
-		}).catch(err => {
-			console.log(err)
+
+			}, 3000)
 		})
-
-		// 收到响应的事件
-		Network.responseReceived(params => {
-			httpCount.resReceived++
-			if(!reqIdMap[params.requestId]) {
-				console.log(chalk.red(params.response.url))
-				return
-			}
-			console.log(chalk.blue('Network.responseReceived: ' + params.requestId + '   ' + reqIdMap[params.requestId].page))
-			let page = reqIdMap[params.requestId].page
-
-			let requestId = params.requestId
-			let {status, url} = params.response
-			// console.log(url)
-			if (!(/^http/.test(url))) return
-
-			if (status !== 200) {
-				warn(status, reqIdMap[requestId].page, url)
-			}
-			// todo
-			delete reqIdMap[requestId]
-		})
-
-		// navigate结束的事件 发生在Page那个url收到响应后 尼玛鸡肋的一逼……
-		Page.frameNavigated(params => {
-			console.log(chalk.green('Page.frameNavigated' + ' ' + index))
-		})
-
-		Promise.all([
-			Network.enable(),
-			Page.enable(),
-			Runtime.enable()
-		]).then(() => {
-			if (index < end + 1) {
-				curPage = pages[index] // 应该是第一次urls[0]
-				visitDict[curPage] = []
-
-				Page.navigate({url: pages[index]})
-			}
-		}).catch((err) => {
-			console.error(err)
-			protocol.close()
-		});
-
 	})
+
+	// 在这里设置header
+	Network.setExtraHTTPHeaders({
+		'headers': headers // config/headers.js配置
+	}).then(result => {
+		// 请求发出前的事件
+		Network.requestWillBeSent(params => {
+			if (!/^http/.test(params.request.url)) return // 为了找出数量对不上的问题 目前看到base64……
+
+			httpCount.reqSent++
+			console.log(chalk.red('Network.requestWillBeSent: ' + params.requestId + '  ' + params.documentURL))
+			// 记录每个请求所属page
+			if (reqIdMap[params.requestId]) {
+				reqIdMap[params.requestId + '*'] = {
+					url: params.request.url,
+					page: params.documentURL
+				}
+			} else {
+				reqIdMap[params.requestId] = {
+					url: params.request.url,
+					page: params.documentURL
+				}
+			}
+
+			// green(params.request.headers.key)
+			// 请求发出前的加工
+			// green(params.request.headers['MyKey']) // 可以看出setExtraHTTPHeaders是有用的
+		})
+	}).catch(err => {
+		console.log(err)
+	})
+
+	// 收到响应的事件
+	Network.responseReceived(params => {
+		httpCount.resReceived++
+		if (!reqIdMap[params.requestId]) {
+			console.log(chalk.red(params.response.url))
+			return
+		}
+		console.log(chalk.blue('Network.responseReceived: ' + params.requestId + '   ' + reqIdMap[params.requestId].page))
+		let page = reqIdMap[params.requestId].page
+
+		let requestId = params.requestId
+		let {status, url} = params.response
+		// console.log(url)
+		if (!(/^http/.test(url))) return
+
+		if (status !== 200) {
+			warn(status, reqIdMap[requestId].page, url)
+		}
+		// todo
+		delete reqIdMap[requestId]
+	})
+
+	// navigate结束的事件 发生在Page那个url收到响应后 尼玛鸡肋的一逼……
+	Page.frameNavigated(params => {
+		console.log(chalk.green('Page.frameNavigated' + ' ' + index))
+	})
+
+	Promise.all([
+		Network.enable(),
+		Page.enable(),
+		Runtime.enable()
+	]).then(() => {
+		if (index < end + 1) {
+			curPage = pages[index] // 应该是第一次urls[0]
+			visitDict[curPage] = []
+
+			Page.navigate({url: pages[index]})
+		}
+	}).catch((err) => {
+		console.error(err)
+		protocol.close()
+	});
+
 }
 
 
-module.exports.launchChrome = launchChrome
-module.exports.runPage = runPage
+module.exports.start = start

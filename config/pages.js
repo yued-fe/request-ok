@@ -9,12 +9,12 @@
 //
 let pages = [
 	'http://book.qidian.com/info/1009287692',
-	'http://book.qidian.com/info/3018022',
-	'http://www.qidian.com/',
-	'http://xuanhuan.qidian.com/',
-	'http://qihuan.qidian.com/',
-	'http://xianxia.qidian.com/',
-	'http://dushi.qidian.com/',
+	// 'http://book.qidian.com/info/3018022',
+	// 'http://www.qidian.com/',
+	// 'http://xuanhuan.qidian.com/',
+	// 'http://qihuan.qidian.com/',
+	// 'http://xianxia.qidian.com/',
+	// 'http://dushi.qidian.com/',
 // 	'http://zhichang.qidian.com/',
 // 	'http://junshi.qidian.com/',
 // 	'http://lishi.qidian.com/',
