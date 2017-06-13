@@ -1,4 +1,6 @@
-// 用来封装发邮件api的
+/**
+ * 用来封装发邮件api的
+ */
 
 const nodemailer = require('nodemailer');
 
