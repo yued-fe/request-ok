@@ -1,4 +1,4 @@
-const sendMail = require('./sendMail')
+const sendMail = require('./sendmail')
 
 const mayGetMailOptions = {
 	to: ['gezhen_auto@163.com', '320gezhen_auto@tongji.edu.cn'], // list of receivers

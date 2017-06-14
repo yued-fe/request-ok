@@ -2,7 +2,7 @@
  * 用来封装发邮件api的
  */
 
-const nodemailer = require('nodemailer');
+const nodemailer = require('nodemailer')
 
 // create reusable transporter object using the default SMTP transport
 let transporter = nodemailer.createTransport({
@@ -13,7 +13,7 @@ let transporter = nodemailer.createTransport({
 		user: '459743905@qq.com', // 如想使用个人账户 可
 		pass: 'fkutksllqgdpbjdb' // 在qq邮箱里 设置-账户-开启POP3/SMTP获取这串pass
 	}
-});
+})
 
 // 默认的参数
 const defaultMailOptions = {
@@ -25,25 +25,25 @@ const defaultMailOptions = {
 }
 
 // 模拟输入的参数 测试好了可以删掉
-const mayGetMailOptions = {
-	to: ['gezhen_auto@163.com', '320gezhen_auto@tongji.edu.cn'], // list of receivers
-	text: [
-		{status: 401, url: 'www.qidian.com/1'},
-		{status: 402, url: 'www.qidian.com/2'},
-		{status: 403, url: 'www.qidian.com/3'},
-		{status: 404, url: 'www.qidian.com/4'},
-		{status: 404, url: 'www.qidian.com/5'},
-		{status: 404, url: 'www.qidian.com/6'},
-	]
-}
+// const mayGetMailOptions = {
+// 	to: ['gezhen_auto@163.com', '320gezhen_auto@tongji.edu.cn'], // list of receivers
+// 	errList: [
+// 		{status: 401, url: 'http://www.qidian.com'},
+// 		{status: 402, url: 'http://www.qidian.com'},
+// 		{status: 403, url: 'http://www.qidian.com'},
+// 		{status: 404, url: 'http://www.qidian.com'},
+// 		{status: 404, url: 'http://www.qidian.com'},
+// 		{status: 404, url: 'http://www.qidian.com'},
+// 	]
+// }
 
-function createOptions(originOptions) {
+const createOptions = (originOptions) => {
 	let options
 	if (originOptions) {
 		newOptions = {}
 		originOptions.to && (newOptions.to = originOptions.to.join(', '))
-		originOptions.text && (newOptions.text = createText(originOptions.text))
-		originOptions.text && (newOptions.html = createHtml(originOptions.text))
+		originOptions.errList && (newOptions.errList = createText(originOptions.errList))
+		originOptions.errList && (newOptions.html = createHtml(originOptions.errList))
 		options = Object.assign({}, defaultMailOptions, newOptions)
 	} else {
 		options = defaultMailOptions
@@ -51,26 +51,26 @@ function createOptions(originOptions) {
 	return options
 }
 
-function createText(text) {
-	if (typeof text === undefined) {
-		throw Error('options.text is undefined')
+const createText = (errList) => {
+	if (typeof errList === undefined) {
+		throw Error('options.errList is undefined')
 	}
 	let str = ''
-	for (let item of text) {
-		str += `${item.status} --- ${item.url}\n`
+	for (let err of errList) {
+		str += `${err.status} --- ${err.page} --- ${err.url}\n`
 	}
 	return str
 }
 
-function createHtml(textArr) {
+const createHtml = (errList) => {
 	// 打个表格吧
 	let headArr
-	if (textArr.length !== 0) {
-		headArr = Object.keys(textArr[0]) // ['status', 'url']这样
+	if (errList.length >= 0) {
+		headArr = Object.keys(errList[0]) // ['status', 'url']这样
 	}
 	let head = headArr.map(head => `<th>${head}</th>`).join('')
 
-	let body = textArr.map((item, index, arr) => {
+	let body = errList.map((item, index, arr) => {
 		let tds = headArr.map(head => {
 			return `<td>${item[head]}</td>` // 算了不加a标签了
 		}).join('') // '<td>404</td><td>www.qidian.com/1</td>' 这样
@@ -81,17 +81,17 @@ function createHtml(textArr) {
 	return table
 }
 
-// console.log(createHtml(mayGetMailOptions.text))
+// console.log(createHtml(mayGetMailOptions.errList))
 
 // 只暴露一个发邮件接口好了
-module.exports = function (options) {
+module.exports = (options) => {
 	/**
 	 * options: {
 	 *   name: 'your name',
 	 *   from: 'your mail address', // 这里会把name和from拼接起来交给sendMail函数实际的options
 	 *   to: ['where to send'], // 这里改成数组 join(',')之后再交给sendMail
 	 *   subject: '这里给个默认然后assign一下好了', // 邮件的主题
-	 *   text: [{'key:val'}] // 这里可能需要一些模板字符串生成一哈 传入有问题的url对象数组
+	 *   errList: [{'key:val'}] // 这里可能需要一些模板字符串生成一哈 传入有问题的url对象数组
 	 * }
 	 * */
 

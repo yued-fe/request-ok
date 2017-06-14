@@ -2,13 +2,14 @@ const CDP = require('chrome-remote-interface') // 按照这篇来尝试https://d
 const chromeLauncher = require('lighthouse/chrome-launcher/chrome-launcher') // @@@ lighthouse是为了跨平台启动chrome 注意 这里引用路径与chrome文档上不同 文档上需要更新了 参考这儿 https://github.com/googlechrome/lighthouse/blob/HEAD/docs/readme.md#using-programmatically
 const chalk = require('chalk')
 
+const sendMail = require('../util/sendmail')
 const checkPort = require('../util/port')// 检查端口占用
 const {warn} = require('../util/format')// 稍微封了一下打印的东西
 
 const {pages} = require('../config/pages')// 读取需要扫描的urls
 const {headers} = require('../config/headers') // 读取需要配置的header
 const launchConfig = require('../config/launch') // lauchChrome配置
-
+const mailConfig = require('../config/mail') // mail配置 from、to之类的
 
 // 根据源码里这里会产生一个chrome的实例(headless)
 const launchChrome = async (launchConfig) => {
@@ -62,6 +63,8 @@ const start = async () => {
 		resReceived: 0
 	}
 
+	let errList = [] // 最后交给sendmail的信息
+
 	const {Page, Runtime, Network} = protocol
 
 	// 请求发出前的事件
@@ -80,6 +83,7 @@ const start = async () => {
 			reqIdMap[requestId].cnt++
 		} else {
 			reqIdMap[requestId] = {
+				id: requestId,
 				cnt: 1,
 				url: url,
 				page: documentURL
@@ -93,12 +97,22 @@ const start = async () => {
 		httpCount.resReceived++
 
 		let {requestId} = params
-		let {status, url} = params.response
+		let {status, statusText, url, mimeType} = params.response
 		let page = reqIdMap[requestId].page
-		console.log(chalk.blue('Network.responseReceived: ' + requestId + '  所属页面: ' + page))
+		console.log(chalk.blue(status + '  Network.responseReceived: ' + requestId + '  所属页面: ' + page))
 
 		// 核心语句 所有非200的按格式打印
-		if (status !== 200) warn(status, reqIdMap[requestId].page, url)
+		if (status !== 200) {
+			warn(status, page, url)
+			// todo 等转换成邮件模式后 这里应该是用来存储报警数据的
+			errList.push({
+				status: status,
+				statusText: statusText,
+				mimeType: mimeType,
+				page: page,
+				url: url
+			}) // 按表格顺序排的
+		}
 		reqIdMap[requestId].cnt--
 	})
 
@@ -124,7 +138,12 @@ const start = async () => {
 			console.log('数量是否对的上: ' + (num + httpCount.resReceived === httpCount.reqSent))
 			console.log(noResReqList)
 
+			// 扫描结束的地方
 			if (index === end) {
+				if(errList.length > 0) { // 有非200的情况下 发送邮件
+					console.log('mail\'s sending...')
+					sendMail(Object.assign({}, {errList: errList}, mailConfig)) // Object {errList: Array(2), from: "aaa", to: "bbb", subject: "hhh"}
+				}
 				protocol.close()
 				chrome.kill() // Kill Chrome.
 			} else {
@@ -137,12 +156,14 @@ const start = async () => {
 				}
 				Page.navigate({url: pages[index]})
 			}
-		}, 2000)
+		}, 3000)
 	})
 
 	// enable这些玩意
 	await Promise.all([Network.enable(), Page.enable(), Runtime.enable()])
 
+	// 禁用cache
+	Network.setCacheDisabled({ 'cacheDisabled': true 	})
 	// 设置header(也有专门的setCookie方法)
 	Network.setExtraHTTPHeaders({'headers': headers})
 
