@@ -24,25 +24,14 @@ const defaultMailOptions = {
 	html: '<b>This is a mail from ReqOk, but if you see this, there might be something wrong with configs or codes. Check it for a while.</b>' // html body
 }
 
-// 模拟输入的参数 测试好了可以删掉
-// const mayGetMailOptions = {
-// 	to: ['gezhen_auto@163.com', '320gezhen_auto@tongji.edu.cn'], // list of receivers
-// 	errList: [
-// 		{status: 401, url: 'http://www.qidian.com'},
-// 		{status: 402, url: 'http://www.qidian.com'},
-// 		{status: 403, url: 'http://www.qidian.com'},
-// 		{status: 404, url: 'http://www.qidian.com'},
-// 		{status: 404, url: 'http://www.qidian.com'},
-// 		{status: 404, url: 'http://www.qidian.com'},
-// 	]
-// }
-
 const createOptions = (originOptions) => {
 	let options
 	if (originOptions) {
 		newOptions = {}
+		originOptions.from && (newOptions.from = originOptions.from)
 		originOptions.to && (newOptions.to = originOptions.to.join(', '))
-		originOptions.errList && (newOptions.errList = createText(originOptions.errList))
+		originOptions.subject && (newOptions.subject)
+		originOptions.errList && (newOptions.text = createText(originOptions.errList))
 		originOptions.errList && (newOptions.html = createHtml(originOptions.errList))
 		options = Object.assign({}, defaultMailOptions, newOptions)
 	} else {
