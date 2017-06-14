@@ -5,6 +5,9 @@
 request-ok是一个监测程序，旨在实现对站点加载中的每一个http请求及响应的状态
 进行监控，并告知订阅者当前存在问题的站点及资源信息。
 
+这里的不同之处在于使用了Headless Chrome。Headless Chrome在Chrome59中得到支持(之前得靠Chromium)。
+它为命令行提供了Chromium所支持的所有现代web平台特性和Blink渲染引擎，这样一来就可以在命令行中“无Chrome”的操作Chrome了。(翻的…)
+
 ## 依赖
 
 [chrome dev tools](https://chromedevtools.github.io/devtools-protocol/)：
@@ -40,3 +43,5 @@ chrome-remote-interface提供了一系列对Chrome DevTools Protocol封装的Jav
 ```
 
 ## 备注
+
+1. [chrome-remote-interface的使用](./docs/2017_0614.md)
