@@ -30,7 +30,7 @@ const createOptions = (originOptions) => {
 		newOptions = {}
 		originOptions.from && (newOptions.from = originOptions.from)
 		originOptions.to && (newOptions.to = originOptions.to.join(', '))
-		originOptions.subject && (newOptions.subject)
+		originOptions.subject && (newOptions.subject = originOptions.subject)
 		originOptions.errList && (newOptions.text = createText(originOptions.errList))
 		originOptions.errList && (newOptions.html = createHtml(originOptions.errList))
 		options = Object.assign({}, defaultMailOptions, newOptions)
@@ -52,6 +52,7 @@ const createText = (errList) => {
 }
 
 const createHtml = (errList) => {
+	let time = `<div>发送时间：${new Date()}</div>`
 	// 打个表格吧
 	let headArr
 	if (errList.length >= 0) {
@@ -66,7 +67,7 @@ const createHtml = (errList) => {
 		let row = `<tr>${tds}</tr>`
 		return row
 	}).join('') // '<tr>...</tr><tr>...</tr>'这样
-	let table = `<table border="1">${head}${body}</table>`
+	let table = `${time}<table border="1">${head}${body}</table>`
 	return table
 }
 
