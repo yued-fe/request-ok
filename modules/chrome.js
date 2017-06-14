@@ -57,7 +57,7 @@ const start = async () => {
 	let index = 0 // 记录在扫描的page是第几个
 	let end = pages.length - 1 // index可能的最大值
 
-	let reqIdMap = {} // todo 用于连通req和res与page的对应关系(可优化)
+	let reqIdMap = {} // 用于连通req和res与page的对应关系
 	let httpCount = {	// 测试用计数器
 		reqSent: 0,
 		resReceived: 0
