@@ -3,7 +3,7 @@ const chromeLauncher = require('lighthouse/chrome-launcher/chrome-launcher') // 
 const chalk = require('chalk')
 
 const sendMail = require('../util/sendmail')
-const checkPort = require('../util/port')// 检查端口占用
+const allotPort = require('../util/port')// 检查端口占用
 const {warn} = require('../util/format')// 稍微封了一下打印的东西
 
 const {pages} = require('../config/pages')// 读取需要扫描的urls
@@ -19,13 +19,13 @@ const launchChrome = async (launchConfig) => {
 		return
 	}
 	// 检查端口号
-	let portStatus = await checkPort(launchConfig.port)
-	if (portStatus !== 'closed') {
-		console.log(`port ${launchConfig.port} is opened, use another one. Of course, maybe the reason of an existing headless chrome`)
-		return
+	let freePort = await allotPort(launchConfig.port)
+	if (freePort !== launchConfig.port) {
+		launchConfig.port = freePort
 	}
 	// 启动(为了好读就不合成一行了)
-	const launcher = await chromeLauncher.launch(launchConfig)
+	console.log('The task is running -p @' + freePort)
+	const launcher = await chromeLauncher.launch(launchConfig) // launch是一个object
 	return launcher
 }
 
@@ -50,6 +50,7 @@ const filterNoResReq = (reqIdMap) => {
 	})
 }
 
+// 要把start在结束前返回一个promise
 const start = async () => {
 	const chrome = await launchChrome(launchConfig)
 	const protocol = await CDP({port: chrome.port})
@@ -140,7 +141,7 @@ const start = async () => {
 
 			// 扫描结束的地方
 			if (index === end) {
-				if(errList.length > 0) { // 有非200的情况下 发送邮件
+				if (errList.length > 0) { // 有非200的情况下 发送邮件
 					console.log('mail\'s sending...')
 					sendMail(Object.assign({}, {errList: errList}, mailConfig)) // Object {errList: Array(2), from: "aaa", to: "bbb", subject: "hhh"}
 				}
@@ -163,7 +164,7 @@ const start = async () => {
 	await Promise.all([Network.enable(), Page.enable(), Runtime.enable()])
 
 	// 禁用cache
-	Network.setCacheDisabled({ 'cacheDisabled': true 	})
+	Network.setCacheDisabled({'cacheDisabled': true})
 	// 设置header(也有专门的setCookie方法)
 	Network.setExtraHTTPHeaders({'headers': headers})
 
@@ -171,5 +172,137 @@ const start = async () => {
 	Page.navigate({url: pages[index]}) // 开始翱翔 目前index==0
 }
 
+// 封装成promise
+const getErrList = () => new Promise(async (resolve, reject) => {
+	const chrome = await launchChrome(launchConfig)
+	const protocol = await CDP({port: chrome.port})
+
+	let index = 0 // 记录在扫描的page是第几个
+	let end = pages.length - 1 // index可能的最大值
+
+	let reqIdMap = {} // 用于连通req和res与page的对应关系
+	let httpCount = {	// 测试用计数器
+		reqSent: 0,
+		resReceived: 0
+	}
+
+	let errList = [] // 最后交给sendmail的信息
+
+	const {Page, Runtime, Network} = protocol
+
+	// 请求发出前的事件
+	Network.requestWillBeSent(params => {
+		if (!/^http/.test(params.request.url)) return // 为了找出数量对不上的问题 只清算http请求 目前看到base64……
+		httpCount.reqSent++ // 累加
+
+		let {requestId, documentURL} = params
+		let {url} = params.request
+		console.log(chalk.red('Network.requestWillBeSent: ' + requestId + '  所属页面: ' + documentURL))
+
+		// 记录每个请求所属page
+		// 很多页面会有stat1.txt、stat2.txt等 会在无头浏览器里触发多于一次的Network.requestWillBeSent但却得不到对应的响应 为了应对重复情形故做此处理
+		let isIdExist = !!reqIdMap[requestId]
+		if (isIdExist) {
+			reqIdMap[requestId].cnt++
+		} else {
+			reqIdMap[requestId] = {
+				id: requestId,
+				cnt: 1,
+				url: url,
+				page: documentURL
+			}
+		}
+	})
+
+	// 收到响应的事件
+	Network.responseReceived(params => {
+		if (!/^http/.test(params.response.url)) return // 这里就没管非http了 比如base64
+		httpCount.resReceived++
+
+		let {requestId} = params
+		let {status, statusText, url, mimeType} = params.response
+		let page = reqIdMap[requestId].page
+		console.log(chalk.blue(status + '  Network.responseReceived: ' + requestId + '  所属页面: ' + page))
+
+		// 核心语句 所有非200的按格式打印
+		if (status !== 200) {
+			warn(status, page, url)
+			// todo 等转换成邮件模式后 这里应该是用来存储报警数据的
+			errList.push({
+				status: status,
+				statusText: statusText,
+				mimeType: mimeType,
+				page: page,
+				url: url
+			}) // 按表格顺序排的
+		}
+		reqIdMap[requestId].cnt--
+	})
+
+	// 发生在Page那个url收到响应后 尼玛鸡肋的一逼
+	Page.frameNavigated(params => {
+		console.log(chalk.green('主Page响应后-Page.frameNavigated: ' + index))
+	})
+
+	// 页面加载事件 window.load触发
+	Page.loadEventFired(async () => {
+		console.log(chalk.magenta('Page.loadEventFired'))
+
+		let documentTitle = await printDocumentTitle(Runtime)
+
+		console.log(chalk.gray('当前Page的title: ' + documentTitle))
+
+		// 为了等待所有res的ugly代码
+		setTimeout(async () => {
+			console.log(chalk.yellow(`reqSent:${httpCount.reqSent}  resReceived:${httpCount.resReceived}`))
+			let noResReqList = filterNoResReq(reqIdMap)
+			let num = noResReqList.length
+			console.log('多的请求： ' + chalk.yellow(num))
+			console.log('数量是否对的上: ' + (num + httpCount.resReceived === httpCount.reqSent))
+			console.log(noResReqList)
+
+			// 扫描结束的地方
+			if (index === end) {
+				if (errList.length > 0) { // 有非200的情况下 发送邮件
+					console.log('mail\'s sending...')
+					sendMail(Object.assign({}, {errList: errList}, mailConfig)) // Object {errList: Array(2), from: "aaa", to: "bbb", subject: "hhh"}
+				}
+				resolve(errList.length) // 给出结果的地方！！！
+				await protocol.close()
+				await chrome.kill() // Kill Chrome.
+			} else {
+				index++
+				console.log('='.repeat(20))
+				reqIdMap = {} // 清空当前page的记录
+				httpCount = {	// 清空测试用计数器
+					reqSent: 0,
+					resReceived: 0
+				}
+				Page.navigate({url: pages[index]})
+			}
+		}, 3000)
+	})
+
+	// enable这些玩意
+	await Promise.all([Network.enable(), Page.enable(), Runtime.enable()])
+
+	// 禁用cache
+	Network.setCacheDisabled({'cacheDisabled': true})
+	// 设置header(也有专门的setCookie方法)
+	Network.setExtraHTTPHeaders({'headers': headers})
+
+	console.log('='.repeat(20))
+	Page.navigate({url: pages[index]}) // 开始翱翔 目前index==0
+})
+
+async function print() {
+	let result1 = await getErrList()
+	console.log(chalk.red(result1))
+
+	let result2 = await getErrList()
+	console.log(chalk.yellow(result2))
+}
+
+print()
 
 module.exports.start = start

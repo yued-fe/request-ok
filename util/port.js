@@ -12,4 +12,12 @@ const checkPort = (port) => {
 	}).then(status => status)
 }
 
-module.exports = checkPort
+const allotPort = async (port) => {
+	let freePort = port
+	while (await checkPort(freePort) === 'open') {
+		freePort++ // 其实这个地方会有bug吧 不过应该也不至于同时那么多任务要跑吧。。。
+	}
+	return freePort
+}
+
+module.exports = allotPort
