@@ -1,9 +1,6 @@
-const {start} = require('./modules/chrome')
+const {getErrList} = require('./modules/chrome')
 
-start().catch(err => {
-	console.log('fuck start @index.js')
-})
-
+module.exports = getErrList
 
 
 

@@ -295,14 +295,14 @@ const getErrList = () => new Promise(async (resolve, reject) => {
 	Page.navigate({url: pages[index]}) // 开始翱翔 目前index==0
 })
 
-async function print() {
-	let result1 = await getErrList()
-	console.log(chalk.red(result1))
+// async function print() {
+// 	let result1 = await getErrList()
+// 	console.log(chalk.red(result1))
+//
+// 	let result2 = await getErrList()
+// 	console.log(chalk.yellow(result2))
+// }
+//
+// print()
 
-	let result2 = await getErrList()
-	console.log(chalk.yellow(result2))
-}
-
-print()
-
-module.exports.start = start
+exports.getErrList = getErrList
