@@ -1,7 +1,7 @@
 // 设置需要监控的页面 此处为起点主站及各频道
 const pages = [
-	'http://book.qidian.com/info/1009287692',// 这俩是故意加的
-	'http://book.qidian.com/info/1009287693',
+	// 'http://book.qidian.com/info/1009287692',// 这俩是故意加的
+	// 'http://book.qidian.com/info/1009287693',
 	'http://www.qidian.com/',
 	'http://xuanhuan.qidian.com/',
 	'http://qihuan.qidian.com/',

@@ -156,7 +156,7 @@ const start = async () => {
 				}
 				Page.navigate({url: pages[index]})
 			}
-		}, 3000)
+		}, 1000)
 	})
 
 	// enable这些玩意
