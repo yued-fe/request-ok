@@ -46,4 +46,4 @@ chrome-remote-interface提供了一系列对Chrome DevTools Protocol封装的Jav
 
 1. [chrome-remote-interface的使用](./docs/2017_0614.md)
 
-2. 暂时新加了models和app.js 请忽略。。。
+2. dev分支下 是可以用于打npm包的工具；master分支下是可以node index进行运行的程序
