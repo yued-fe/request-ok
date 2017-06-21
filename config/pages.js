@@ -2,6 +2,7 @@
 const pages = [
 	// 'http://book.qidian.com/info/1009287692',// 这俩是故意加的
 	// 'http://book.qidian.com/info/1009287693',
+	'https://www.webnovel.com/',
 	'http://www.qidian.com/',
 	'http://xuanhuan.qidian.com/',
 	'http://qihuan.qidian.com/',
